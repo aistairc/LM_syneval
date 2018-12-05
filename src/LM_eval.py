@@ -23,47 +23,86 @@ parser.add_argument('--lm_data', type=str, default='../models/model.bin',
 parser.add_argument('--tests', type=str, default='all',
                     help='Which constructions to test (agrmt/npi/all)')
 parser.add_argument('--model_type', type=str, required=True,
-                    help='Which kind of model (RNN/multitask/ngram)')
+                    help='Which kind of model (RNN/multitask/ngram/myRNN)')
 parser.add_argument('--unit_type', type=str, default='word',
                     help='Kinds of units used on language model (word/char)')
 parser.add_argument('--ngram_order', type=int, default=5,
                     help='Order of the ngram model')
 parser.add_argument('--vocab', type=str, default='ngram_vocab.pkl',
                     help='File containing the ngram vocab')
+parser.add_argument('--myrnn_dir', type=str, help='Path to lm directory for my rnn')
+parser.add_argument('--lm_output', type=str, default='lm_output',
+                    help='Path to directory where result files are saved')
 
 args = parser.parse_args()
 
-writer = TestWriter(args.template_dir, args.output_file)
-testcase = TestCase()
-if args.tests == 'agrmt':
-    tests = testcase.agrmt_cases
-elif args.tests == 'npi':
-    tests = testcase.npi_cases
-else:
-    tests = testcase.all_cases
+def mk_all_test_sents():
+    testcase = TestCase()
+    if args.tests == 'agrmt':
+        tests = testcase.agrmt_cases
+    elif args.tests == 'npi':
+        tests = testcase.npi_cases
+    else:
+        tests = testcase.all_cases
 
-all_test_sents = {}
-for test_name in tests:
-    test_sents = pickle.load(open(args.template_dir+"/"+test_name+".pickle", 'rb'))
-    all_test_sents[test_name] = test_sents
+    all_test_sents = {}
+    for test_name in tests:
+        test_sents = pickle.load(open(args.template_dir+"/"+test_name+".pickle", 'rb'))
+        all_test_sents[test_name] = test_sents
 
-writer.write_tests(all_test_sents, args.unit_type)
-name_lengths = writer.name_lengths
-key_lengths = writer.key_lengths
+    return all_test_sents
+
+def write_tests(all_test_sents):
+    """There are two aims for this function:
+
+    1) fill the output file with sentences specified by args.output_file;
+    2) return two intermediate objects (name_lengths and key_lengths) which will be created
+       duing the first step.
+
+    The first step is not essential for the later process; outputing actual sentences are
+    rather for interpreation of the results. The intermediate files are more important.
+
+    For this reason, as well as for allowing parallel processing, when the file already exits,
+    we avoid to overwrite it, and just create the two intermediate objects.
+    """
+    writer = TestWriter(args.template_dir, args.output_file)
+    out_fn = writer.out_file
+    if os.path.exists(out_fn):
+        writer.only_fill_maps(all_test_sents)
+    else:
+        writer.write_tests(all_test_sents, args.unit_type)
+    return writer.name_lengths, writer.key_lengths
+
+all_test_sents = mk_all_test_sents()
+name_lengths, key_lengths = write_tests(all_test_sents)
 
 def test_LM():
+    if not os.path.exists(args.lm_output):
+        os.makedirs(args.lm_output)
+    lm_output_path = os.path.join(args.lm_output, 'scores.txt')
+    results_path = os.path.join(args.lm_output, 'results.pickle')
+
     if args.model_type.lower() == "ngram":
         logging.info("Testing ngram...")
-        os.system('ngram -order ' + str(args.ngram_order) + ' -lm ' + args.model + ' -vocab ' + args.vocab + ' -ppl ' + args.template_dir+'/'+args.output_file + ' -debug 2 > ngram.output')
+        os.system('ngram -order ' + str(args.ngram_order) + ' -lm ' + args.model + ' -vocab ' + args.vocab + ' -ppl ' + args.template_dir+'/'+args.output_file + ' -debug 2 > ' + lm_output_path)
         if args.ngram_order == 1:
             results = score_unigram()
         else:
             results = score_ngram()
-    else:       
+    elif args.model_type.lower() == 'myrnn':
+        logging.info("Testing My RNN...")
+        test_path = os.path.join(args.template_dir, args.output_file)
+        eval_path = os.path.join(args.myrnn_dir, 'test_word.py')
+        cmd = 'python {} --data {} --model {} --output {} --ignore-eos'.format(
+            eval_path, test_path, args.model, lm_output_path)
+        print(cmd)
+        os.system(cmd)
+        results = score_rnn(lm_output_path)
+    else:
         logging.info("Testing RNN...")
-        os.system('../example_scripts/test.sh '+ args.template_dir + ' ' +  args.model + ' ' + args.lm_data + ' ' + args.output_file + ' > '+ 'rnn.output')
-        results = score_rnn()
-    with open(args.model_type+"_results.pickle", 'wb') as f:
+        os.system('../example_scripts/test.sh '+ args.template_dir + ' ' +  args.model + ' ' + args.lm_data + ' ' + args.output_file + ' > '+ lm_output_path)
+        results = score_rnn(lm_output_path)
+    with open(results_path, 'wb') as f:
         pickle.dump(results, f)
 
 def score_unigram():
@@ -122,9 +161,9 @@ def score_ngram():
     return all_scores
 
 
-def score_rnn():
+def score_rnn(score_fn):
     logging.info("Scoring RNN...")
-    with open('rnn.output', 'r') as f:
+    with open(score_fn, 'r') as f:
         all_scores = {}
         first = False
         score = 0.

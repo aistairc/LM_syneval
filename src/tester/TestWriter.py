@@ -8,7 +8,6 @@ class TestWriter():
         self.key_lengths = {}
         self.template_dir = template_dir
         self.out_file = os.path.join(self.template_dir, sent_file)
-        
 
     def write_tests(self, all_sents, unit_type):
         logging.info("Writing tests...")
@@ -32,3 +31,17 @@ class TestWriter():
                             else:
                                 f.write(sent[i] + " . <eos>\n")
                     self.name_lengths[name] = name_length
+
+    def only_fill_maps(self, all_sents):
+        name_length = 0
+        key_length = 0
+        for name in all_sents.keys():
+            if "npi" in name:
+                multiplier=3
+            else: multiplier=2
+            self.key_lengths[name] = {}
+            for key in all_sents[name].keys():
+                key_length += multiplier * len(all_sents[name][key])
+                self.key_lengths[name][key] = key_length
+                name_length += multiplier * len(all_sents[name][key])
+                self.name_lengths[name] = name_length
