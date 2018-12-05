@@ -1,0 +1,4 @@
+*.pyc
+*.pickle
+**/scores.txt
+**/overall_accs.txt
