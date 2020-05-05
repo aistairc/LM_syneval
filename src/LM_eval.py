@@ -34,17 +34,21 @@ parser.add_argument('--myrnn_dir', type=str, help='Path to lm directory for my r
 parser.add_argument('--lm_output', type=str, default='lm_output',
                     help='Path to directory where result files are saved')
 parser.add_argument('--gpu', type=int, default=None)
+parser.add_argument('--capitalize', action='store_true')
 
 args = parser.parse_args()
 
-def mk_all_test_sents():
-    testcase = TestCase()
-    if args.tests == 'agrmt':
-        tests = testcase.agrmt_cases
+def collect_tests(args):
+    files = [f[:-7] for f in os.listdir(args.template_dir) if f.endswith('.pickle')]
+    if args.tests == 'argmt':
+        return [f for f in files if f.find('npi') == -1]
     elif args.tests == 'npi':
-        tests = testcase.npi_cases
+        return [f for f in files if f.find('npi') != -1]
     else:
-        tests = testcase.all_cases
+        return files
+
+def mk_all_test_sents():
+    tests = collect_tests(args)
 
     all_test_sents = {}
     for test_name in tests:
@@ -94,8 +98,9 @@ def test_LM():
         logging.info("Testing My RNN...")
         test_path = os.path.join(args.template_dir, args.output_file)
         eval_path = os.path.join(args.myrnn_dir, 'test_word.py')
-        cmd = 'python {} --data {} --model {} --output {} --ignore-eos --gpu {}'.format(
-            eval_path, test_path, args.model, lm_output_path, args.gpu)
+        capitalize = '--capitalize' if args.capitalize else ''
+        cmd = 'python {} --data {} --model {} --output {} --ignore-eos --gpu {} {}'.format(
+            eval_path, test_path, args.model, lm_output_path, args.gpu, capitalize)
         print(cmd)
         os.system(cmd)
         results = score_rnn(lm_output_path)

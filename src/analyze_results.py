@@ -26,6 +26,9 @@ parser.add_argument('--mode', type=str, default='overall',
                     help='Level of detail to report (overall/condensed/full)')
 parser.add_argument('--unit_type', type=str, default='word',
                     help='Unit used for language modeling (word/char)')
+parser.add_argument('--template_dir', type=str, default=None,
+                    help='Location of the template files')
+
 args = parser.parse_args()
 # check args
 if args.analysis != 'full_sent' and args.analysis != 'word_only':
@@ -41,14 +44,26 @@ if os.path.exists(os.path.join(directory, "case_accs.txt")):
     os.system("rm " + os.path.join(directory, "case_accs.txt"))
 if os.path.exists(os.path.join(directory, "individual_accs.txt")):
     os.system("rm " + os.path.join(directory, "individual_accs.txt"))
-    
-testcase = TestCase()
-if args.tests == 'agrmt':
-    tests = testcase.agrmt_cases
-elif args.tests == 'npi':
-    tests = testcase.npi_cases
+
+if args.template_dir:
+    # TestCase class cannot handle correctly EMNLP2018 templates since it is static.
+    # I expect for this template, --template_dir argument would be given, and in that case,
+    # template names are read from the files on the directory.
+    files = [f[:-7] for f in os.listdir(args.template_dir) if f.endswith('.pickle')]
+    if args.tests == 'argmt':
+        tests = [f for f in files if f.find('npi') == -1]
+    elif args.tests == 'npi':
+        tests = [f for f in files if f.find('npi') != -1]
+    else:
+        tests = files
 else:
-    tests = testcase.all_cases
+    testcase = TestCase()
+    if args.tests == 'agrmt':
+        tests = testcase.agrmt_cases
+    elif args.tests == 'npi':
+        tests = testcase.npi_cases
+    else:
+        tests = testcase.all_cases
 
 results = pickle.load(open(args.results_file, 'rb'))
 
@@ -78,6 +93,39 @@ def is_more_probable(sent_a, sent_b):
         index = [sent_a[i][0]!=sent_b[i][0] for i in range(len(sent_a))].index(True)
         return sent_a[index][1] > sent_b[index][1]
     return sum([sent_a[i][1] for i in range(len(sent_a))]) > sum([sent_b[i][1] for i in range(len(sent_b))])
+
+
+def output_all_indivisual(joined_results):
+    def sent_str(c):
+        return '\t'.join([x[0] for x in c])+ " {} ".format(sum(x[1] for x in c)) + "\n" + \
+            '\t'.join([str(round(x[1],2)) for x in c])+"\n"
+    with open(directory+"/all_accs.txt", 'w') as fout:
+        for name in joined_results.keys():
+            fout.write("\n##########\n" + name + "\n##########\n\n")
+            if "npi" in name:
+                results = joined_results[name]
+                for case in results.keys():
+                    fout.write(case+":\n")
+                    # case is future, past, etc.
+                    for i in range(0, len(results[case]), 3):
+                        grammatical = results[case][i]
+                        intrusive = results[case][i+1]
+                        ungrammatical = results[case][i+2]
+                        fout.write(sent_str(grammatical))
+                        fout.write(sent_str(intrusive))
+                        fout.write(sent_str(ungrammatical))
+                        fout.write('\n')
+            else:
+                results = joined_results[name]
+                for case in results.keys():
+                    fout.write(case+":\n")
+                    # case is future, past, etc.
+                    for i in range(0, len(results[case]), 2):
+                        g = results[case][i]
+                        u = results[case][i+1]
+                        fout.write(sent_str(g))
+                        fout.write(sent_str(u))
+                        fout.write('\n')
 
 def analyze_agrmt_results(results):
     correct_sents = {}
@@ -312,3 +360,6 @@ with open(directory+"/overall_accs.txt", 'w') as f:
             sents = analyze_agrmt_results(joined_results[name])
             overall = display_agrmt_results(name, sents)
             f.write(name+": "+str(overall)+"\n")
+
+if args.mode == "full":
+    output_all_indivisual(joined_results)
