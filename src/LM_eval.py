@@ -33,6 +33,7 @@ parser.add_argument('--vocab', type=str, default='ngram_vocab.pkl',
 parser.add_argument('--myrnn_dir', type=str, help='Path to lm directory for my rnn')
 parser.add_argument('--lm_output', type=str, default='lm_output',
                     help='Path to directory where result files are saved')
+parser.add_argument('--gpu', type=int, default=None)
 
 args = parser.parse_args()
 
@@ -93,8 +94,8 @@ def test_LM():
         logging.info("Testing My RNN...")
         test_path = os.path.join(args.template_dir, args.output_file)
         eval_path = os.path.join(args.myrnn_dir, 'test_word.py')
-        cmd = 'python {} --data {} --model {} --output {} --ignore-eos'.format(
-            eval_path, test_path, args.model, lm_output_path)
+        cmd = 'python {} --data {} --model {} --output {} --ignore-eos --gpu {}'.format(
+            eval_path, test_path, args.model, lm_output_path, args.gpu)
         print(cmd)
         os.system(cmd)
         results = score_rnn(lm_output_path)
